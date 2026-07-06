@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<title>GTA V — Location Switch</title>
+<title>GTA V Map Animation</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet"/>
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
 <link href="https://fonts.cdnfonts.com/css/pricedown" rel="stylesheet"/>
@@ -125,21 +125,48 @@
   #controls button.on{background:#8fce4b;color:#000}
   #err{padding:7px 14px;font-size:11px;color:#ff8a80;display:none;letter-spacing:.5px}
 
-  #settings{border-top:1px solid #ffffff22;padding:10px 14px 12px}
-  .set{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11px;
-    letter-spacing:1px;text-transform:uppercase;color:#ffffffaa}
-  .set span{width:86px;flex:none}
-  .set b{width:38px;flex:none;text-align:right;color:#f0a53c;font-size:12px}
-  .set input[type=range]{flex:1;accent-color:#f0a53c;height:14px}
-  .set input[type=checkbox]{accent-color:#8fce4b}
-  .set label{display:flex;align-items:center;gap:4px;flex:none;cursor:pointer}
+  /* ---------- configure ---------- */
+  #cfg{border-top:1px solid #ffffff22}
+  #cfgHead{width:100%;background:none;border:0;color:#ffffff99;cursor:pointer;
+    display:flex;align-items:center;gap:8px;padding:11px 14px;
+    font-size:11px;letter-spacing:2px;text-transform:uppercase}
+  #cfgHead:hover{color:#f0a53c}
+  #cfgHead i{margin-left:auto;font-style:normal;transition:transform .25s}
+  #cfg.open #cfgHead i{transform:rotate(180deg)}
+  #cfg.open #cfgHead{color:#f0a53c}
+  #cfgBody{display:none;padding:2px 14px 14px}
+  #cfg.open #cfgBody{display:block}
+  .set{margin-top:10px;transition:opacity .2s}
+  .set.dim .row2{opacity:.35;pointer-events:none}
+  .set .row1{display:flex;align-items:center;justify-content:space-between;
+    font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#ffffff88}
+  .set .row1 b{color:#f0a53c;font-size:12px;letter-spacing:.5px}
+  .set .row2{display:flex;align-items:center;gap:10px;margin-top:5px}
+  .set input[type=range]{flex:1;-webkit-appearance:none;appearance:none;
+    background:transparent;height:20px;cursor:pointer;margin:0}
+  .set input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;
+    background:linear-gradient(90deg,#f0a53c var(--p,50%),#ffffff1f var(--p,50%))}
+  .set input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#f0a53c;margin-top:-5px;
+    border:2px solid #0a0a0a;box-shadow:0 0 10px rgba(240,165,60,.5)}
+  .set input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#ffffff1f}
+  .set input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:#f0a53c}
+  .set input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;
+    background:#f0a53c;border:2px solid #0a0a0a}
+  .tog{width:34px;height:18px;flex:none;border-radius:9px;background:#ffffff26;
+    position:relative;cursor:pointer;transition:background .2s}
+  .tog:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;
+    border-radius:50%;background:#fff;transition:left .2s}
+  .tog.on{background:#8fce4b}
+  .tog.on:after{left:18px}
+  .toglbl{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#ffffff66}
 
   /* ---------- splash ---------- */
   #splash{position:fixed;inset:0;z-index:50;background:#000;display:flex;
     flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
     transition:opacity .6s}
   #splash.gone{opacity:0;pointer-events:none}
-  #splash h1{font-family:Pricedown,'Arial Black',sans-serif;font-size:min(15vw,120px);
+  #splash h1{font-family:Pricedown,'Arial Black',sans-serif;font-size:min(11vw,96px);
     line-height:.95;text-align:center;color:#fff;letter-spacing:2px}
   #splash h1 span{color:#f0a53c}
   #splash p{margin-top:34px;font-size:14px;letter-spacing:6px;color:#ffffffaa;
@@ -186,19 +213,30 @@
       <button id="auto">Auto</button>
       <button id="shuffle">Shuffle</button>
     </div>
-    <div id="settings">
-      <div class="set"><span>Street zoom</span>
-        <input id="zStreet" type="range" min="14" max="18.5" step="0.1"/><b id="zStreetV"></b></div>
-      <div class="set"><span>Sky zoom</span>
-        <input id="zSky" type="range" min="1.5" max="10" step="0.1"/><b id="zSkyV"></b>
-        <label><input id="zAuto" type="checkbox"/>auto</label></div>
-      <div class="set"><span>Speed</span>
-        <input id="spd" type="range" min="0.5" max="2" step="0.05"/><b id="spdV"></b></div>
+    <div id="cfg">
+      <button id="cfgHead">⚙ Configure <i>▾</i></button>
+      <div id="cfgBody">
+        <div class="set">
+          <div class="row1"><span>Street zoom · landing height</span><b id="zStreetV"></b></div>
+          <div class="row2"><input id="zStreet" type="range" min="14" max="18.5" step="0.1"/></div>
+        </div>
+        <div class="set" id="skyRow">
+          <div class="row1"><span>Sky zoom · trip altitude</span><b id="zSkyV"></b></div>
+          <div class="row2">
+            <input id="zSky" type="range" min="3" max="12" step="0.1"/>
+            <div class="tog" id="zAuto"></div><span class="toglbl">auto</span>
+          </div>
+        </div>
+        <div class="set">
+          <div class="row1"><span>Speed</span><b id="spdV"></b></div>
+          <div class="row2"><input id="spd" type="range" min="0.5" max="2" step="0.05"/></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-<div id="splash"><h1>Location<br/><span>Switch</span></h1><p>CLICK TO BEGIN</p>
+<div id="splash"><h1>GTA V<br/><span>Map Animation</span></h1><p>CLICK TO BEGIN</p>
   <a class="madeby" href="https://lite.supamaus.com/" target="_blank" rel="noopener"
      onclick="event.stopPropagation()">
     <span>built with</span>
@@ -433,7 +471,7 @@ function hav(a,b){ // km between [lng,lat] pairs
   return 2*R*Math.asin(Math.sqrt(h));
 }
 const ovZoom=d=>SET.auto
-  ?clamp(12.5-Math.log2(Math.max(d,1)),2.2,10.5)
+  ?clamp(13.5-.95*Math.log2(Math.max(d,1)),4,11) // stay closer to the ground than before
   :Math.min(SET.sky,SET.street-3);
 
 /* each level covers a bigger slice of the climb than the last, like the game */
@@ -584,18 +622,22 @@ $('#shuffle').onclick=()=>{
 };
 
 const zStreet=$('#zStreet'),zSky=$('#zSky'),zAuto=$('#zAuto'),spd=$('#spd');
+function fill(el){el.style.setProperty('--p',((el.value-el.min)/(el.max-el.min)*100)+'%');}
 function syncSet(){
   zStreet.value=SET.street;$('#zStreetV').textContent=SET.street.toFixed(1);
   zSky.value=SET.sky;$('#zSkyV').textContent=SET.auto?'auto':SET.sky.toFixed(1);
-  zSky.disabled=SET.auto;zAuto.checked=SET.auto;
   spd.value=SET.speed;$('#spdV').textContent=SET.speed.toFixed(2)+'×';
+  zAuto.classList.toggle('on',SET.auto);
+  $('#skyRow').classList.toggle('dim',SET.auto);
+  [zStreet,zSky,spd].forEach(fill);
 }
 zStreet.oninput=()=>{SET.street=+zStreet.value;saveSet();syncSet();};
 zSky.oninput=()=>{SET.sky=+zSky.value;saveSet();syncSet();};
-zAuto.onchange=()=>{SET.auto=zAuto.checked;saveSet();syncSet();};
+zAuto.onclick=()=>{SET.auto=!SET.auto;saveSet();syncSet();};
 spd.oninput=()=>{SET.speed=+spd.value;saveSet();syncSet();};
+$('#cfgHead').onclick=()=>$('#cfg').classList.toggle('open');
 // release focus after slider drags so Space still triggers a switch
-document.querySelectorAll('#settings input').forEach(i=>
+document.querySelectorAll('#cfg input').forEach(i=>
   i.addEventListener('pointerup',()=>i.blur()));
 syncSet();
 addEventListener('keydown',e=>{
