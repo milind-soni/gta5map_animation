@@ -522,13 +522,12 @@ function levelPulse(){ // breathing throb while the camera holds between levels
 }
 
 function punch(cam,dir,dur){
-  thump(dir==='out'?150:115);
-  fireRipple(460); // shockwave races out from center on every zoom
+  beat(); // heartbeat is the only sound on the punches — the visuals do the rest
+  fireRipple(460); // shockwave stays visual-only
   kick('flash',.32,300);
   kick('blurY',dir==='out'?26:20,dur+200);
   kick('scale',dir==='out'?.055:.065,dur+160,true); // abrupt bulge, springs back
   kick('ab',3.5,dur+150);
-  whoosh(dur/1000+.15,dir==='out'?260:1600,dir==='out'?2400:320,.3);
   map.easeTo({...cam,duration:dur,easing:eoq,essential:true});
   return wait(dur);
 }
