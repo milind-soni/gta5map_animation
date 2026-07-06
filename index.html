@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>GTA V — Location Switch</title>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet"/>
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+<link href="https://fonts.cdnfonts.com/css/pricedown" rel="stylesheet"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#000;color:#fff;
+    font-family:"Helvetica Neue",Arial,sans-serif;
+    -webkit-user-select:none;user-select:none}
+
+  #stage{position:fixed;inset:0;overflow:hidden;background:#000}
+
+  /* map lives oversized inside fxwrap so scale-pulses / blur never reveal edges */
+  #fxwrap{position:absolute;inset:-5%;will-change:transform,filter;transform-origin:50% 50%}
+  #map{position:absolute;inset:0}
+  .mapboxgl-ctrl-logo,.mapboxgl-ctrl-attrib{display:none!important}
+
+  /* clouds sweep past during the aerial pan — inside fxwrap so they get graded too */
+  #clouds{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .cloud{position:absolute;border-radius:50%;filter:blur(28px);
+    background:radial-gradient(closest-side,rgba(255,255,255,.9),rgba(255,255,255,0) 70%);
+    will-change:transform,opacity;opacity:0}
+  /* milky cloud-haze veil over everything at cruise altitude */
+  #haze{position:absolute;inset:0;pointer-events:none;opacity:0;filter:blur(6px);
+    background:
+      radial-gradient(60% 50% at 18% 25%,rgba(255,255,255,.75),transparent 70%),
+      radial-gradient(55% 45% at 80% 15%,rgba(255,255,255,.6),transparent 70%),
+      radial-gradient(70% 55% at 65% 80%,rgba(255,255,255,.65),transparent 70%),
+      radial-gradient(45% 40% at 8% 85%,rgba(255,255,255,.55),transparent 70%),
+      linear-gradient(rgba(235,240,245,.28),rgba(235,240,245,.28))}
+
+  /* tilt-shift edge defocus — blurs what's behind it, masked to the frame edges */
+  #defocus{position:absolute;inset:0;pointer-events:none;
+    -webkit-mask:radial-gradient(65% 60% at 50% 48%,transparent 42%,#000 78%);
+    mask:radial-gradient(65% 60% at 50% 48%,transparent 42%,#000 78%)}
+
+  /* teal lifted-shadow layer for the descent cross-process look */
+  #shadowTint{position:absolute;inset:0;pointer-events:none;opacity:0;
+    background:#12403e;mix-blend-mode:screen}
+
+  /* chromatic fringe at the frame edges — red one side, cyan the other */
+  #fringe{position:absolute;inset:0;pointer-events:none;opacity:0;
+    mix-blend-mode:screen;filter:blur(7px);
+    background:linear-gradient(105deg,rgba(255,55,45,.55),transparent 11%,
+      transparent 89%,rgba(45,215,255,.55))}
+
+  /* bloom glow — hot center that throbs with the heartbeat */
+  #glow{position:absolute;inset:0;pointer-events:none;opacity:0;
+    mix-blend-mode:screen;
+    background:radial-gradient(62% 55% at 50% 45%,rgba(255,250,232,.85),rgba(255,250,232,0) 72%)}
+
+  /* overlays (not filtered) */
+  #tint{position:absolute;inset:0;pointer-events:none;background:#9db4c8;
+    mix-blend-mode:overlay;opacity:0}
+  #vig{position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(115% 90% at 50% 45%,transparent 45%,rgba(0,0,0,.92) 100%)}
+  #flash{position:absolute;inset:0;pointer-events:none;background:#fff;
+    mix-blend-mode:screen;opacity:0}
+  #grain{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;
+    mix-blend-mode:overlay;image-rendering:pixelated;opacity:.04}
+  #letterbox .bar{position:absolute;left:0;right:0;height:0;background:#000;
+    transition:height .5s cubic-bezier(.4,0,.2,1)}
+  #letterbox .bar.top{top:0}#letterbox .bar.bot{bottom:0}
+  body.switching #letterbox .bar{height:4.5vh}
+
+  /* ---------- HUD ---------- */
+  #label{position:absolute;left:38px;bottom:52px;pointer-events:none;
+    transform:translateX(-60px);opacity:0;transition:transform .45s cubic-bezier(.2,.9,.25,1),opacity .45s}
+  #label.show{transform:none;opacity:1}
+  #label .name{font-family:Pricedown,'Arial Black',sans-serif;font-size:64px;line-height:1;
+    color:#fff;text-shadow:3px 3px 0 #000,0 0 26px rgba(0,0,0,.9);letter-spacing:1px}
+  #label .sub{margin-top:6px;font-size:13px;letter-spacing:2px;text-transform:uppercase;
+    color:#cfd8dc;text-shadow:1px 1px 0 #000}
+
+  #hint{position:absolute;right:26px;bottom:26px;font-size:12px;letter-spacing:2px;
+    color:#ffffff99;text-shadow:1px 1px 0 #000;pointer-events:none}
+  #hint b{display:inline-block;border:1px solid #ffffff88;border-radius:3px;
+    padding:2px 8px;margin-right:6px;font-weight:600}
+
+  /* ---------- control panel ---------- */
+  #panel{position:absolute;top:22px;left:22px;width:300px;z-index:10;
+    background:rgba(0,0,0,.78);border:1px solid #ffffff22;backdrop-filter:blur(6px);
+    transition:transform .3s,opacity .3s}
+  body.panel-hidden #panel{transform:translateX(-340px);opacity:0;pointer-events:none}
+  #panel header{background:#000;padding:10px 14px 7px;border-bottom:2px solid #f0a53c}
+  #panel header h1{font-family:Pricedown,'Arial Black',sans-serif;font-size:26px;
+    color:#f0a53c;letter-spacing:1px;font-weight:400}
+  #locs{max-height:38vh;overflow-y:auto}
+  .loc{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;
+    border-bottom:1px solid #ffffff10;font-size:13px;letter-spacing:.5px}
+  .loc:hover{background:#ffffff14}
+  .loc.current{background:#f0a53c;color:#000;font-weight:700}
+  .loc .n{width:16px;font-family:Pricedown,'Arial Black',sans-serif;font-size:16px;opacity:.7}
+  .loc .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .loc .x{opacity:.4;padding:0 4px;font-size:15px}
+  .loc .x:hover{opacity:1;color:#ff5252}
+  #addrow{display:flex;border-top:1px solid #ffffff22}
+  #q{flex:1;background:transparent;border:0;outline:0;color:#fff;padding:11px 14px;
+    font-size:13px;letter-spacing:.5px}
+  #q::placeholder{color:#ffffff55}
+  #add{background:#ffffff14;border:0;color:#fff;padding:0 16px;cursor:pointer;font-size:18px}
+  #add:hover{background:#f0a53c;color:#000}
+  #controls{display:flex;gap:1px;border-top:1px solid #ffffff22}
+  #controls button{flex:1;background:#ffffff0d;border:0;color:#fff;padding:11px 0;
+    cursor:pointer;font-size:12px;letter-spacing:2px;text-transform:uppercase}
+  #controls button:hover{background:#f0a53c;color:#000}
+  #controls button.on{background:#8fce4b;color:#000}
+  #err{padding:7px 14px;font-size:11px;color:#ff8a80;display:none;letter-spacing:.5px}
+
+  #settings{border-top:1px solid #ffffff22;padding:10px 14px 12px}
+  .set{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11px;
+    letter-spacing:1px;text-transform:uppercase;color:#ffffffaa}
+  .set span{width:86px;flex:none}
+  .set b{width:38px;flex:none;text-align:right;color:#f0a53c;font-size:12px}
+  .set input[type=range]{flex:1;accent-color:#f0a53c;height:14px}
+  .set input[type=checkbox]{accent-color:#8fce4b}
+  .set label{display:flex;align-items:center;gap:4px;flex:none;cursor:pointer}
+
+  /* ---------- splash ---------- */
+  #splash{position:fixed;inset:0;z-index:50;background:#000;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
+    transition:opacity .6s}
+  #splash.gone{opacity:0;pointer-events:none}
+  #splash h1{font-family:Pricedown,'Arial Black',sans-serif;font-size:min(15vw,120px);
+    line-height:.95;text-align:center;color:#fff;letter-spacing:2px}
+  #splash h1 span{color:#f0a53c}
+  #splash p{margin-top:34px;font-size:14px;letter-spacing:6px;color:#ffffffaa;
+    animation:blink 1.4s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="fxwrap">
+    <div id="map"></div>
+    <div id="haze"></div>
+    <div id="clouds"></div>
+  </div>
+  <div id="defocus"></div>
+  <div id="shadowTint"></div>
+  <div id="fringe"></div>
+  <div id="glow"></div>
+  <div id="tint"></div>
+  <div id="vig"></div>
+  <canvas id="grain"></canvas>
+  <div id="flash"></div>
+  <div id="letterbox"><div class="bar top"></div><div class="bar bot"></div></div>
+
+  <div id="label"><div class="name"></div><div class="sub"></div></div>
+  <div id="hint"><b>SPACE</b>SWITCH &nbsp;&nbsp;<b>H</b>PANEL</div>
+
+  <div id="panel">
+    <header><h1>Switch</h1></header>
+    <div id="locs"></div>
+    <div id="err"></div>
+    <div id="addrow">
+      <input id="q" placeholder="Add a location… (Enter)" autocomplete="off"/>
+      <button id="add">+</button>
+    </div>
+    <div id="controls">
+      <button id="next">Switch</button>
+      <button id="auto">Auto</button>
+      <button id="shuffle">Shuffle</button>
+    </div>
+    <div id="settings">
+      <div class="set"><span>Street zoom</span>
+        <input id="zStreet" type="range" min="14" max="18.5" step="0.1"/><b id="zStreetV"></b></div>
+      <div class="set"><span>Sky zoom</span>
+        <input id="zSky" type="range" min="1.5" max="10" step="0.1"/><b id="zSkyV"></b>
+        <label><input id="zAuto" type="checkbox"/>auto</label></div>
+      <div class="set"><span>Speed</span>
+        <input id="spd" type="range" min="0.5" max="2" step="0.05"/><b id="spdV"></b></div>
+    </div>
+  </div>
+</div>
+
+<div id="splash"><h1>Location<br/><span>Switch</span></h1><p>CLICK TO BEGIN</p></div>
+
+<script>
+'use strict';
+/* ================================================================
+   GTA V switch transition, faithful beat-for-beat:
+   1. three discrete zoom-out "punches" (camera rockets upward,
+      vertical motion-blur streak, white bloom, bass thump)
+   2. high-altitude pan across the map (horizontal blur, clouds
+      sweeping underneath, camera sway)
+   3. three zoom-in punches down onto the target
+   Throughout: pulsating scale wobble synced to a heartbeat thump,
+   desaturated high-contrast grade, chromatic-aberration ghosting,
+   film grain, vignette, letterbox bars.
+   ================================================================ */
+
+const TOKEN='pk.eyJ1IjoibWlsaW5kc29uaTIwMSIsImEiOiJjbWV3MHZzcWYwcWU3Mm1wd2wxZHIxcDh2In0.-UXuMHp7FvoJ6NuKpZ5T-w';
+mapboxgl.accessToken=TOKEN;
+
+const $=s=>document.querySelector(s);
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const eio=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;          // easeInOutQuad
+const eoq=t=>1-Math.pow(1-t,4);                           // easeOutQuart — punch feel
+
+/* ---------------- locations ---------------- */
+let locations=[
+  {name:'Los Angeles',  sub:'Santa Monica Pier · the real Los Santos', coords:[-118.4965,34.0094]},
+  {name:'New York',     sub:'Times Square · Liberty City energy',       coords:[-73.9855,40.7580]},
+  {name:'Las Vegas',    sub:'The Strip',                                coords:[-115.1728,36.1147]},
+  {name:'San Francisco',sub:'Golden Gate Bridge',                       coords:[-122.4783,37.8199]},
+];
+let cur=0, busy=false, autoOn=false, started=false;
+
+/* ---------------- user settings ---------------- */
+const SET=Object.assign({street:16.4,sky:4,auto:true,speed:1},
+  JSON.parse(localStorage.getItem('gtaSwitchSet')||'{}'));
+function saveSet(){localStorage.setItem('gtaSwitchSet',JSON.stringify(SET));}
+const D=ms=>ms/SET.speed; // every transition duration scales with the speed setting
+
+/* ---------------- map ---------------- */
+const map=new mapboxgl.Map({
+  container:'map',
+  style:'mapbox://styles/mapbox/satellite-streets-v12',
+  center:locations[0].coords, zoom:SET.street, pitch:58, bearing:18,
+  interactive:false, attributionControl:false, fadeDuration:60,
+});
+
+/* ================================================================
+   FX ENGINE — one rAF loop composes:
+   base values (tweened) + transient kicks (decaying spikes) + wobble
+   ================================================================ */
+const FXB={sat:1,con:1,bri:1,vig:0,grain:0,tint:0,ab:0,wobble:0,sway:0,blurX:0,blurY:0,baseScale:0,
+           sep:0,hue:0,bloom:0,haze:0,defocus:0,shadow:0,shimmer:0};
+const tweens={}, kicks=[];
+const fxwrap=$('#fxwrap'),
+      flashEl=$('#flash'), tintEl=$('#tint'), vigEl=$('#vig'), grainEl=$('#grain'),
+      hazeEl=$('#haze'), defocusEl=$('#defocus'), shadowEl=$('#shadowTint'),
+      fringeEl=$('#fringe'), glowEl=$('#glow');
+
+/* ------- color-grade phases, matched frame-by-frame to the game -------
+   lift:    olive-khaki sepia monochrome over the source character
+   ascend:  blown-out parchment — hot bloom, everything bleaches cream
+   cruise:  cool desaturated grey under a milky cloud haze
+   descend: cross-process — cream highlights, teal lifted shadows
+------------------------------------------------------------------------ */
+const PHASES={
+  lift:   {sep:.85,hue:48, sat:1.05,con:1.3, bri:1.02,bloom:.45,haze:0,  defocus:3,shadow:0,  tint:.15,shimmer:5},
+  ascend: {sep:.7, hue:38, sat:.9,  con:1.18,bri:1.16,bloom:.95,haze:.25,defocus:5,shadow:0,  tint:.1, shimmer:8},
+  cruise: {sep:.12,hue:0,  sat:.4,  con:.98, bri:1.1, bloom:.35,haze:.75,defocus:5,shadow:0,  tint:.3, shimmer:3},
+  descend:{sep:.5, hue:12, sat:.75, con:1.22,bri:1.06,bloom:.6, haze:.1, defocus:6,shadow:.28,tint:.12,shimmer:6},
+  none:   {sep:0,  hue:0,  sat:1,   con:1,   bri:1,   bloom:0,  haze:0,  defocus:0,shadow:0,  tint:0, shimmer:0},
+};
+function setPhase(name,dur=450){
+  const p=PHASES[name];
+  for(const k in p)tw(k,p[k],dur);
+}
+
+function tw(key,to,dur,ease=eio){tweens[key]={from:FXB[key],to,t0:performance.now(),dur,ease};}
+function kick(key,val,dur){kicks.push({key,val,dur,t0:performance.now()});}
+function K(key,now){let s=0;for(const k of kicks){if(k.key!==key)continue;
+  const p=(now-k.t0)/k.dur;if(p<1)s+=k.val*Math.pow(1-p,2);}return s;}
+
+const gctx=grainEl.getContext('2d');
+function sizeGrain(){grainEl.width=Math.ceil(innerWidth/3);grainEl.height=Math.ceil(innerHeight/3);}
+sizeGrain();addEventListener('resize',sizeGrain);
+let gFrame=0;
+function drawGrain(){
+  const w=grainEl.width,h=grainEl.height,id=gctx.createImageData(w,h),d=id.data;
+  for(let i=0;i<d.length;i+=4){const v=(Math.random()*255)|0;d[i]=d[i+1]=d[i+2]=v;d[i+3]=255;}
+  gctx.putImageData(id,0,0);
+}
+
+let lastBeat=0, fxOn=false;
+function loop(now){
+  requestAnimationFrame(loop);
+  const t=now/1000;
+
+  for(const key in tweens){const v=tweens[key],p=clamp((now-v.t0)/v.dur,0,1);
+    FXB[key]=v.from+(v.to-v.from)*v.ease(p);if(p>=1)delete tweens[key];}
+  for(let i=kicks.length-1;i>=0;i--)if(now-kicks[i].t0>kicks[i].dur)kicks.splice(i,1);
+
+  // heartbeat: pump the image + a low thump while the switch is live
+  if(busy&&now-lastBeat>560){lastBeat=now;kick('scale',.010,420);beat();}
+
+  // dual-frequency wobble = the drunken "pulsating" breathe of the switch cam
+  const wob=Math.sin(t*11.4)*FXB.wobble+Math.sin(t*4.3+2)*FXB.wobble*.6;
+  const scale=1+FXB.baseScale+K('scale',now)+wob;
+  const rot=Math.sin(t*2.1)*FXB.sway+Math.sin(t*3.7+1)*FXB.sway*.4;
+  const skw=Math.sin(t*5.3)*FXB.shimmer*.03; // heat-haze: liquid skew wobble, GPU-free
+  fxwrap.style.transform=`scale(${scale.toFixed(4)}) rotate(${rot.toFixed(3)}deg) skewX(${skw.toFixed(3)}deg)`;
+
+  const bx=FXB.blurX+K('blurX',now), by=FXB.blurY+K('blurY',now);
+  const ab=(FXB.ab+K('ab',now))*(1+.55*Math.sin(t*9.2));
+  const active=busy||FXB.ab>.02||bx>.05||by>.05||FXB.sat<.99||FXB.sep>.01||FXB.bloom>.01;
+
+  if(active){
+    // everything GPU-composited: CSS color funcs + a single blur for motion smear
+    const mb=Math.max(bx,by)*.55;
+    fxwrap.style.filter=`sepia(${FXB.sep.toFixed(3)}) hue-rotate(${FXB.hue.toFixed(1)}deg) saturate(${FXB.sat.toFixed(3)}) contrast(${FXB.con.toFixed(3)}) brightness(${(FXB.bri+FXB.bloom*.1).toFixed(3)})${mb>.2?` blur(${mb.toFixed(1)}px)`:''}`;
+    fxOn=true;
+  }else if(fxOn){fxwrap.style.filter='';fxOn=false;}
+
+  // chromatic fringe flares with aberration kicks; bloom glow throbs with the heartbeat
+  fringeEl.style.opacity=clamp(ab/7,0,.6).toFixed(3);
+  glowEl.style.opacity=(FXB.bloom*(.22+.09*Math.sin(t*7.1))).toFixed(3);
+
+  flashEl.style.opacity=clamp(K('flash',now),0,.85).toFixed(3);
+  tintEl.style.opacity=FXB.tint.toFixed(3);
+  hazeEl.style.opacity=FXB.haze.toFixed(3);
+  shadowEl.style.opacity=FXB.shadow.toFixed(3);
+  const df=FXB.defocus;
+  defocusEl.style.backdropFilter=defocusEl.style.webkitBackdropFilter=df>.1?`blur(${df.toFixed(1)}px)`:'';
+  vigEl.style.opacity=(0.55+FXB.vig*.45).toFixed(3);
+  const g=.025+FXB.grain;
+  grainEl.style.opacity=g.toFixed(3);
+  if(g>.05&&(gFrame++%2===0))drawGrain();
+
+  // idle cinematic: slow orbit, like the game lingering on a character
+  if(started&&!busy)map.setBearing(map.getBearing()+0.018);
+}
+requestAnimationFrame(loop);
+
+/* ================================================================
+   AUDIO — synthesized whooshes / thumps (Web Audio, no assets)
+   ================================================================ */
+let AC=null,noiseBuf=null;
+function initAudio(){
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  noiseBuf=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);
+  const d=noiseBuf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+}
+function whoosh(dur,f0,f1,vol){
+  if(!AC)return;const t=AC.currentTime;
+  const src=AC.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+  const bp=AC.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.1;
+  bp.frequency.setValueAtTime(f0,t);bp.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  const g=AC.createGain();g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol,t+dur*.3);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  src.connect(bp).connect(g).connect(AC.destination);src.start(t);src.stop(t+dur+.05);
+}
+function thump(f=120){
+  if(!AC)return;const t=AC.currentTime;
+  const o=AC.createOscillator();o.type='sine';
+  o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(34,t+.32);
+  const g=AC.createGain();g.gain.setValueAtTime(.5,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+.34);
+  o.connect(g).connect(AC.destination);o.start(t);o.stop(t+.4);
+}
+function beat(){ // soft heartbeat pump under the whole transition
+  if(!AC)return;const t=AC.currentTime;
+  const o=AC.createOscillator();o.type='sine';
+  o.frequency.setValueAtTime(62,t);o.frequency.exponentialRampToValueAtTime(40,t+.14);
+  const g=AC.createGain();g.gain.setValueAtTime(.13,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+.16);
+  o.connect(g).connect(AC.destination);o.start(t);o.stop(t+.2);
+}
+function boom(){ // landing hit
+  if(!AC)return;thump(90);whoosh(.5,3000,300,.22);
+}
+let windNodes=null;
+function windStart(){ // high-altitude wind bed
+  if(!AC||windNodes)return;const t=AC.currentTime;
+  const src=AC.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+  const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=420;lp.Q.value=.6;
+  const g=AC.createGain();g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(.16,t+.6);
+  src.connect(lp).connect(g).connect(AC.destination);src.start(t);
+  windNodes={src,g};
+}
+function windStop(){
+  if(!windNodes)return;const t=AC.currentTime;
+  windNodes.g.gain.exponentialRampToValueAtTime(.0001,t+.5);
+  windNodes.src.stop(t+.6);windNodes=null;
+}
+
+/* ================================================================
+   CLOUDS — sweep past the camera during the aerial pan
+   ================================================================ */
+const cloudBox=$('#clouds');
+function sweepClouds(panDur,dirX,dirY){
+  const W=innerWidth,H=innerHeight;
+  for(let i=0;i<6;i++){
+    const el=document.createElement('div');el.className='cloud';
+    const s=140+Math.random()*320;el.style.width=s+'px';el.style.height=s*.55+'px';
+    el.style.left=Math.random()*100+'%';el.style.top=Math.random()*100+'%';
+    cloudBox.appendChild(el);
+    const dist=(Math.max(W,H)*1.6)*(.7+Math.random()*.6);
+    const dur=panDur*(.55+Math.random()*.5), delay=Math.random()*panDur*.35;
+    el.animate([
+      {transform:`translate(${dirX*dist*.5}px,${dirY*dist*.5}px) scale(.8)`,opacity:0},
+      {opacity:.55,offset:.3},
+      {transform:`translate(${-dirX*dist*.5}px,${-dirY*dist*.5}px) scale(1.25)`,opacity:0},
+    ],{duration:dur,delay,easing:'linear',fill:'forwards'}).onfinish=()=>el.remove();
+  }
+}
+
+/* ================================================================
+   THE TRANSITION
+   ================================================================ */
+function hav(a,b){ // km between [lng,lat] pairs
+  const R=6371,toR=Math.PI/180;
+  const dLa=(b[1]-a[1])*toR,dLo=(b[0]-a[0])*toR;
+  const h=Math.sin(dLa/2)**2+Math.cos(a[1]*toR)*Math.cos(b[1]*toR)*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+const ovZoom=d=>SET.auto
+  ?clamp(12.5-Math.log2(Math.max(d,1)),2.2,10.5)
+  :Math.min(SET.sky,SET.street-3);
+
+/* each level covers a bigger slice of the climb than the last, like the game */
+const STEPS=[.28,.62,1];
+function levelPulse(){ // breathing throb while the camera holds between levels
+  kick('scale',.02,520);kick('ab',2.5,450);beat();
+}
+
+function punch(cam,dir,dur){
+  thump(dir==='out'?150:115);
+  kick('flash',.32,300);
+  kick('blurY',dir==='out'?26:20,dur+200);
+  kick('scale',dir==='out'?.034:.046,dur+140);
+  kick('ab',3.5,dur+150);
+  whoosh(dur/1000+.15,dir==='out'?260:1600,dir==='out'?2400:320,.3);
+  map.easeTo({...cam,duration:dur,easing:eoq,essential:true});
+  return wait(dur);
+}
+
+function rampIn(){
+  tw('vig',1,380);
+  tw('wobble',.010,450);tw('ab',2.0,450);tw('sway',.45,450);
+  document.body.classList.add('switching');
+}
+function rampOut(){
+  setPhase('none',650);
+  tw('vig',0,650);tw('grain',0,650);
+  tw('wobble',0,550);tw('ab',0,550);tw('sway',0,550);
+  document.body.classList.remove('switching');
+}
+
+async function descend(loc,zTop){ // three punch-ins onto the target
+  setPhase('descend',500); // teal shadows / cream highlights on the way down
+  const zt=SET.street,pitches=[0,28,58];
+  for(let s=0;s<3;s++){
+    const z=zTop+(zt-zTop)*STEPS[s];
+    if(s===2)setPhase('none',700); // color snaps back to life as the ground arrives
+    await punch({zoom:z,pitch:pitches[s],center:loc.coords,
+      bearing:s===2?18:0},'in',D(s===2?900:760));
+    if(s<2){levelPulse();await wait(D(430));} // pulsating hold at each level
+  }
+}
+
+async function transitionTo(loc){
+  busy=true;hideLabel();rampIn();
+  setPhase('lift',400); // olive-khaki monochrome clamps down over the source
+  whoosh(1.3,180,1200,.25); // opening riser
+  const from=map.getCenter(),dKm=hav([from.lng,from.lat],loc.coords);
+
+  if(dKm<1.5){ // nearby: the game skips the aerial trip, does a hard blur-swap
+    kick('blurY',30,700);kick('flash',.4,350);thump(140);
+    map.easeTo({center:loc.coords,zoom:SET.street,pitch:58,duration:D(850),easing:eio,essential:true});
+    await wait(D(900));
+  }else{
+    await wait(D(500)); // hold on the graded overhead shot, breathing
+    const z0=map.getZoom(),zTop=ovZoom(dKm),pitches=[36,14,0],b0=map.getBearing();
+    setPhase('ascend',900); // highlights bleach to parchment as the camera rockets up
+    for(let s=0;s<3;s++){ // three punch-outs, each level a slower, bigger climb
+      const z=z0+(zTop-z0)*STEPS[s];
+      await punch({zoom:z,pitch:pitches[s],bearing:b0*(1-STEPS[s])},'out',D(720+s*120));
+      if(s<2){levelPulse();await wait(D(480));} // pulsating hold at each level
+    }
+    setPhase('cruise',600); // cool grey under the cloud haze
+    windStart();
+    await wait(D(280)); // hover: pure wobble breathing at altitude
+
+    // aerial pan across the map
+    const panDur=D(clamp(700+dKm*.4,1000,3000));
+    const dx=loc.coords[0]-from.lng,dy=from.lat-loc.coords[1],m=Math.hypot(dx,dy)||1;
+    tw('blurX',9,300);
+    sweepClouds(panDur,-dx/m,-dy/m);
+    whoosh(panDur/1000,300,700,.22);
+    map.easeTo({center:loc.coords,duration:panDur,easing:eio,essential:true,bearing:0});
+    await wait(panDur*.72);tw('blurX',0,panDur*.3);
+    await wait(panDur*.28+180);
+
+    windStop();
+    await descend(loc,zTop);
+  }
+
+  rampOut();boom();showLabel(loc);
+  await wait(450);busy=false;
+  if(autoOn)queueAuto();
+}
+
+/* ---------------- label / HUD ---------------- */
+const labelEl=$('#label');
+function showLabel(loc){
+  labelEl.querySelector('.name').textContent=loc.name;
+  labelEl.querySelector('.sub').textContent=loc.sub||`${loc.coords[1].toFixed(4)}, ${loc.coords[0].toFixed(4)}`;
+  labelEl.classList.add('show');
+}
+function hideLabel(){labelEl.classList.remove('show');}
+
+/* ---------------- playlist / UI ---------------- */
+const locsEl=$('#locs'),errEl=$('#err');
+function renderLocs(){
+  locsEl.innerHTML='';
+  locations.forEach((l,i)=>{
+    const d=document.createElement('div');
+    d.className='loc'+(i===cur?' current':'');
+    d.innerHTML=`<span class="n">${i+1}</span><span class="t">${l.name}</span><span class="x">✕</span>`;
+    d.querySelector('.x').onclick=e=>{e.stopPropagation();
+      locations.splice(i,1);if(cur>=locations.length)cur=0;renderLocs();};
+    d.onclick=()=>goTo(i);
+    locsEl.appendChild(d);
+  });
+}
+function goTo(i){
+  if(busy||!started||!locations.length)return;
+  cur=i%locations.length;renderLocs();
+  transitionTo(locations[cur]);
+}
+function nextLoc(){if(locations.length>1)goTo((cur+1)%locations.length);}
+
+let autoTimer=null;
+function queueAuto(){clearTimeout(autoTimer);autoTimer=setTimeout(()=>{if(autoOn&&!busy)nextLoc();},3600);}
+
+async function geocode(q){
+  const u=`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(q)}&limit=1&access_token=${TOKEN}`;
+  const j=await(await fetch(u)).json();
+  if(!j.features||!j.features.length)throw new Error('not found');
+  const f=j.features[0];
+  return{name:f.properties.name_preferred||f.properties.name||q,
+    sub:f.properties.full_address||'',coords:f.geometry.coordinates};
+}
+async function addLocation(){
+  const q=$('#q').value.trim();if(!q)return;
+  errEl.style.display='none';$('#q').value='';$('#q').placeholder='Searching…';
+  try{
+    const loc=await geocode(q);locations.push(loc);renderLocs();
+    if(started&&!busy)goTo(locations.length-1);
+  }catch{
+    errEl.textContent=`Couldn't find “${q}”`;errEl.style.display='block';
+  }
+  $('#q').placeholder='Add a location… (Enter)';
+}
+
+$('#add').onclick=addLocation;
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter')addLocation();e.stopPropagation();});
+$('#next').onclick=nextLoc;
+$('#auto').onclick=()=>{autoOn=!autoOn;$('#auto').classList.toggle('on',autoOn);
+  if(autoOn&&!busy)queueAuto();else clearTimeout(autoTimer);};
+$('#shuffle').onclick=()=>{
+  for(let i=locations.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;
+    [locations[i],locations[j]]=[locations[j],locations[i]];}
+  cur=0;renderLocs();
+};
+
+const zStreet=$('#zStreet'),zSky=$('#zSky'),zAuto=$('#zAuto'),spd=$('#spd');
+function syncSet(){
+  zStreet.value=SET.street;$('#zStreetV').textContent=SET.street.toFixed(1);
+  zSky.value=SET.sky;$('#zSkyV').textContent=SET.auto?'auto':SET.sky.toFixed(1);
+  zSky.disabled=SET.auto;zAuto.checked=SET.auto;
+  spd.value=SET.speed;$('#spdV').textContent=SET.speed.toFixed(2)+'×';
+}
+zStreet.oninput=()=>{SET.street=+zStreet.value;saveSet();syncSet();};
+zSky.oninput=()=>{SET.sky=+zSky.value;saveSet();syncSet();};
+zAuto.onchange=()=>{SET.auto=zAuto.checked;saveSet();syncSet();};
+spd.oninput=()=>{SET.speed=+spd.value;saveSet();syncSet();};
+// release focus after slider drags so Space still triggers a switch
+document.querySelectorAll('#settings input').forEach(i=>
+  i.addEventListener('pointerup',()=>i.blur()));
+syncSet();
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.code==='Space'){e.preventDefault();nextLoc();}
+  if(e.key==='h'||e.key==='H')document.body.classList.toggle('panel-hidden');
+  const n=parseInt(e.key);if(n>=1&&n<=locations.length)goTo(n-1);
+});
+
+/* ---------------- boot ---------------- */
+renderLocs();
+$('#splash').addEventListener('click',async()=>{
+  if(started)return;started=true;
+  initAudio();
+  $('#splash').classList.add('gone');
+  // intro: start from orbit and slam down onto location 1 (the punch-in half)
+  const loc=locations[0];
+  map.jumpTo({center:loc.coords,zoom:3.2,pitch:0,bearing:0});
+  busy=true;rampIn();
+  setPhase('cruise',400);windStart();
+  whoosh(1.2,150,900,.22);
+  await wait(650);
+  windStop();
+  await descend(loc,3.2);
+  rampOut();boom();showLabel(loc);
+  await wait(400);busy=false;
+},{once:true});
+</script>
+</body>
+</html>
