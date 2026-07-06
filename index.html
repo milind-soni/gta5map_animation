@@ -43,6 +43,9 @@
   #shadowTint{position:absolute;inset:0;pointer-events:none;opacity:0;
     background:#12403e;mix-blend-mode:screen}
 
+  /* shockwave ring: a refraction band that snaps outward from center on each punch */
+  #ripple{position:absolute;inset:0;pointer-events:none;opacity:0}
+
   /* chromatic fringe at the frame edges — red one side, cyan the other */
   #fringe{position:absolute;inset:0;pointer-events:none;opacity:0;
     mix-blend-mode:screen;filter:blur(7px);
@@ -183,6 +186,7 @@
     <div id="clouds"></div>
   </div>
   <div id="defocus"></div>
+  <div id="ripple"></div>
   <div id="shadowTint"></div>
   <div id="fringe"></div>
   <div id="glow"></div>
@@ -321,9 +325,19 @@ function setPhase(name,dur=450){
 }
 
 function tw(key,to,dur,ease=eio){tweens[key]={from:FXB[key],to,t0:performance.now(),dur,ease};}
-function kick(key,val,dur){kicks.push({key,val,dur,t0:performance.now()});}
+function kick(key,val,dur,osc){kicks.push({key,val,dur,osc,t0:performance.now()});}
 function K(key,now){let s=0;for(const k of kicks){if(k.key!==key)continue;
-  const p=(now-k.t0)/k.dur;if(p<1)s+=k.val*Math.pow(1-p,2);}return s;}
+  const p=(now-k.t0)/k.dur;if(p<0)continue; // kicks can be scheduled ahead
+  // osc kicks snap out and spring back — the abrupt bedsheet settle
+  if(p<1)s+=k.val*Math.pow(1-p,2)*(k.osc?Math.cos(p*9):1);}return s;}
+
+/* shockwave: refraction ring racing outward from center */
+const rippleEl=$('#ripple');let ripple=null;
+function fireRipple(dur=460){
+  ripple={t0:performance.now(),dur};
+  rippleEl.style.backdropFilter=rippleEl.style.webkitBackdropFilter=
+    'blur(4px) brightness(1.3) contrast(1.15) saturate(1.25)';
+}
 
 const gctx=grainEl.getContext('2d');
 function sizeGrain(){grainEl.width=Math.ceil(innerWidth/3);grainEl.height=Math.ceil(innerHeight/3);}
@@ -344,8 +358,11 @@ function loop(now){
     FXB[key]=v.from+(v.to-v.from)*v.ease(p);if(p>=1)delete tweens[key];}
   for(let i=kicks.length-1;i>=0;i--)if(now-kicks[i].t0>kicks[i].dur)kicks.splice(i,1);
 
-  // heartbeat: pump the image + a low thump while the switch is live
-  if(busy&&now-lastBeat>560){lastBeat=now;kick('scale',.010,420);beat();}
+  // heartbeat: lub-dub — image pumps twice with the sound, ~70bpm under tension
+  if(busy&&now-lastBeat>850){lastBeat=now;beat();
+    kick('scale',.014,240);                              // lub
+    kicks.push({key:'scale',val:.009,dur:220,t0:now+160}); // dub
+  }
 
   // dual-frequency wobble = the drunken "pulsating" breathe of the switch cam
   const wob=Math.sin(t*11.4)*FXB.wobble+Math.sin(t*4.3+2)*FXB.wobble*.6;
@@ -368,6 +385,16 @@ function loop(now){
   // chromatic fringe flares with aberration kicks; bloom glow throbs with the heartbeat
   fringeEl.style.opacity=clamp(ab/7,0,.6).toFixed(3);
   glowEl.style.opacity=(FXB.bloom*(.22+.09*Math.sin(t*7.1))).toFixed(3);
+
+  // shockwave ring: abrupt launch (easeOutQuart), fading as it travels
+  if(ripple){const p=(now-ripple.t0)/ripple.dur;
+    if(p>=1){ripple=null;rippleEl.style.opacity=0;
+      rippleEl.style.backdropFilter=rippleEl.style.webkitBackdropFilter='';}
+    else{const r=4+eoq(p)*82,w=11*(1-p*.45);
+      rippleEl.style.opacity=(1-p).toFixed(3);
+      rippleEl.style.webkitMask=rippleEl.style.mask=
+        `radial-gradient(circle at 50% 48%,transparent ${(r-w).toFixed(1)}%,#000 ${(r-w/2).toFixed(1)}%,#000 ${r.toFixed(1)}%,transparent ${(r+w/3).toFixed(1)}%)`;
+    }}
 
   flashEl.style.opacity=clamp(K('flash',now),0,.85).toFixed(3);
   tintEl.style.opacity=FXB.tint.toFixed(3);
@@ -416,13 +443,19 @@ function thump(f=120){
   g.gain.exponentialRampToValueAtTime(.001,t+.34);
   o.connect(g).connect(AC.destination);o.start(t);o.stop(t+.4);
 }
-function beat(){ // soft heartbeat pump under the whole transition
-  if(!AC)return;const t=AC.currentTime;
-  const o=AC.createOscillator();o.type='sine';
-  o.frequency.setValueAtTime(62,t);o.frequency.exponentialRampToValueAtTime(40,t+.14);
-  const g=AC.createGain();g.gain.setValueAtTime(.13,t);
-  g.gain.exponentialRampToValueAtTime(.001,t+.16);
-  o.connect(g).connect(AC.destination);o.start(t);o.stop(t+.2);
+function beat(){ // real lub-dub heartbeat under the whole transition
+  if(!AC)return;
+  const hit=(at,f0,vol,len)=>{
+    const o=AC.createOscillator();o.type='sine';
+    o.frequency.setValueAtTime(f0,at);o.frequency.exponentialRampToValueAtTime(f0*.55,at+len);
+    const g=AC.createGain();g.gain.setValueAtTime(.0001,at);
+    g.gain.exponentialRampToValueAtTime(vol,at+.012); // fast attack = the thud
+    g.gain.exponentialRampToValueAtTime(.0001,at+len);
+    o.connect(g).connect(AC.destination);o.start(at);o.stop(at+len+.05);
+  };
+  const t=AC.currentTime;
+  hit(t,     72,.22,.14); // lub
+  hit(t+.16, 58,.15,.12); // dub — softer, lower, right behind it
 }
 function boom(){ // landing hit
   if(!AC)return;thump(90);whoosh(.5,3000,300,.22);
@@ -485,14 +518,15 @@ function ovZoom(from,to){ // trip altitude: just high enough to fit both endpoin
 /* each level covers a bigger slice of the climb than the last, like the game */
 const STEPS=[.28,.62,1];
 function levelPulse(){ // breathing throb while the camera holds between levels
-  kick('scale',.02,520);kick('ab',2.5,450);beat();
+  kick('scale',.022,520,true);kick('ab',2.5,450);fireRipple(560);beat();
 }
 
 function punch(cam,dir,dur){
   thump(dir==='out'?150:115);
+  fireRipple(460); // shockwave races out from center on every zoom
   kick('flash',.32,300);
   kick('blurY',dir==='out'?26:20,dur+200);
-  kick('scale',dir==='out'?.034:.046,dur+140);
+  kick('scale',dir==='out'?.055:.065,dur+160,true); // abrupt bulge, springs back
   kick('ab',3.5,dur+150);
   whoosh(dur/1000+.15,dir==='out'?260:1600,dir==='out'?2400:320,.3);
   map.easeTo({...cam,duration:dur,easing:eoq,essential:true});
