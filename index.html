@@ -389,6 +389,9 @@ requestAnimationFrame(loop);
    AUDIO — synthesized whooshes / thumps (Web Audio, no assets)
    ================================================================ */
 let AC=null,noiseBuf=null;
+// the real GTA V "urgent character switch" whoosh-pulse stinger
+const switchSfx=new Audio('sfx/switch.mp3');switchSfx.preload='auto';switchSfx.volume=.85;
+function playSwitchSfx(){switchSfx.currentTime=0;switchSfx.play().catch(()=>{});}
 function initAudio(){
   AC=new (window.AudioContext||window.webkitAudioContext)();
   noiseBuf=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);
@@ -510,6 +513,7 @@ function rampOut(){
 
 async function descend(loc,zTop){ // three punch-ins onto the target
   setPhase('descend',500); // teal shadows / cream highlights on the way down
+  playSwitchSfx(); // stinger again for the dive, like the game
   const zt=SET.street,pitches=[0,28,58];
   for(let s=0;s<3;s++){
     const z=zTop+(zt-zTop)*STEPS[s];
@@ -523,7 +527,8 @@ async function descend(loc,zTop){ // three punch-ins onto the target
 async function transitionTo(loc){
   busy=true;hideLabel();rampIn();
   setPhase('lift',400); // olive-khaki monochrome clamps down over the source
-  whoosh(1.3,180,1200,.25); // opening riser
+  playSwitchSfx(); // the real switch stinger kicks the whole thing off
+  whoosh(1.3,180,1200,.2); // synth riser underneath
   const from=map.getCenter(),dKm=hav([from.lng,from.lat],loc.coords);
 
   if(dKm<1.5){ // nearby: the game skips the aerial trip, does a hard blur-swap
