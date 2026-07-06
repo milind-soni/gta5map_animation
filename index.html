@@ -82,6 +82,19 @@
   #hint b{display:inline-block;border:1px solid #ffffff88;border-radius:3px;
     padding:2px 8px;margin-right:6px;font-weight:600}
 
+  .madeby{position:absolute;top:22px;right:22px;z-index:20;
+    display:inline-flex;align-items:center;gap:11px;text-decoration:none;
+    padding:9px 16px;border-radius:999px;
+    border:1px solid rgba(240,165,60,.35);background:rgba(0,0,0,.55);
+    backdrop-filter:blur(6px);
+    transition:transform .2s,border-color .2s,background .2s,box-shadow .2s}
+  .madeby:hover{transform:translateY(-1px);border-color:rgba(240,165,60,.7);
+    background:rgba(240,165,60,.14);box-shadow:0 8px 26px rgba(240,165,60,.2)}
+  .madeby span{font-size:11px;font-weight:700;color:#f0a53c;
+    letter-spacing:1px;text-transform:uppercase}
+  .madeby img{height:22px;width:auto;display:block}
+  #splash .madeby{position:static;margin-top:44px}
+
   /* ---------- control panel ---------- */
   #panel{position:absolute;top:22px;left:22px;width:300px;z-index:10;
     background:rgba(0,0,0,.78);border:1px solid #ffffff22;backdrop-filter:blur(6px);
@@ -155,6 +168,11 @@
   <div id="label"><div class="name"></div><div class="sub"></div></div>
   <div id="hint"><b>SPACE</b>SWITCH &nbsp;&nbsp;<b>H</b>PANEL</div>
 
+  <a class="madeby" href="https://lite.supamaus.com/" target="_blank" rel="noopener">
+    <span>built with</span>
+    <img src="supamaus-brand-white.svg" alt="SupaMaus"/>
+  </a>
+
   <div id="panel">
     <header><h1>Switch</h1></header>
     <div id="locs"></div>
@@ -180,7 +198,13 @@
   </div>
 </div>
 
-<div id="splash"><h1>Location<br/><span>Switch</span></h1><p>CLICK TO BEGIN</p></div>
+<div id="splash"><h1>Location<br/><span>Switch</span></h1><p>CLICK TO BEGIN</p>
+  <a class="madeby" href="https://lite.supamaus.com/" target="_blank" rel="noopener"
+     onclick="event.stopPropagation()">
+    <span>built with</span>
+    <img src="supamaus-brand-white.svg" alt="SupaMaus"/>
+  </a>
+</div>
 
 <script>
 'use strict';
