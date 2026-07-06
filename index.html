@@ -470,9 +470,14 @@ function hav(a,b){ // km between [lng,lat] pairs
   const h=Math.sin(dLa/2)**2+Math.cos(a[1]*toR)*Math.cos(b[1]*toR)*Math.sin(dLo/2)**2;
   return 2*R*Math.asin(Math.sqrt(h));
 }
-const ovZoom=d=>SET.auto
-  ?clamp(13.5-.95*Math.log2(Math.max(d,1)),4,11) // stay closer to the ground than before
-  :Math.min(SET.sky,SET.street-3);
+function ovZoom(from,to){ // trip altitude: just high enough to fit both endpoints
+  if(!SET.auto)return Math.min(SET.sky,SET.street-3);
+  const cam=map.cameraForBounds(
+    [[Math.min(from[0],to[0]),Math.min(from[1],to[1])],
+     [Math.max(from[0],to[0]),Math.max(from[1],to[1])]],{padding:100});
+  // +0.4: the camera pans, so it can sit a touch lower than an exact fit
+  return clamp((cam?cam.zoom:6)+.4,3.5,Math.min(11.5,SET.street-3));
+}
 
 /* each level covers a bigger slice of the climb than the last, like the game */
 const STEPS=[.28,.62,1];
@@ -527,7 +532,8 @@ async function transitionTo(loc){
     await wait(D(900));
   }else{
     await wait(D(500)); // hold on the graded overhead shot, breathing
-    const z0=map.getZoom(),zTop=ovZoom(dKm),pitches=[36,14,0],b0=map.getBearing();
+    const z0=map.getZoom(),zTop=ovZoom([from.lng,from.lat],loc.coords),
+          pitches=[36,14,0],b0=map.getBearing();
     setPhase('ascend',900); // highlights bleach to parchment as the camera rockets up
     for(let s=0;s<3;s++){ // three punch-outs, each level a slower, bigger climb
       const z=z0+(zTop-z0)*STEPS[s];
